@@ -2,7 +2,6 @@
  * Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-
 import { Runtime } from 'aws-sdk/clients/lambda'
 import { Map, Set } from 'immutable'
 
@@ -13,6 +12,23 @@ export const dotNetRuntimes: Set<Runtime> = Set<Runtime>(['dotnetcore2.1'])
 export const samLambdaRuntimes: Set<Runtime> = Set.union([nodeJsRuntimes, pythonRuntimes, dotNetRuntimes])
 
 export type DependencyManager = 'cli-package' | 'mod' | 'gradle' | 'pip' | 'npm' | 'maven' | 'bundler'
+
+export const helloWorldTemplate = 'AWS SAM Hello World'
+export const eventBridgeHelloWorldTemplate = 'AWS SAM EventBridge Hello World'
+export const eventBridgeStarterAppTemplate = 'AWS SAM EventBridge App from Scratch'
+
+export const exitTemplate = 'exitWizard'
+
+export type SamTemplate =
+    | 'AWS SAM Hello World'
+    | 'AWS SAM EventBridge Hello World'
+    | 'AWS SAM EventBridge App from Scratch'
+    | 'exitWizard'
+export const samTemplates: Set<SamTemplate> = Set<SamTemplate>([
+    helloWorldTemplate,
+    eventBridgeHelloWorldTemplate,
+    eventBridgeStarterAppTemplate
+])
 
 // TODO: Make this return an array of DependencyManagers when we add runtimes with multiple dependency managers
 export function getDependencyManager(runtime: Runtime): DependencyManager {
@@ -56,4 +72,21 @@ function getSortableCompareText(runtime: Runtime): string {
 
 export function compareSamLambdaRuntime(a: Runtime, b: Runtime): number {
     return getSortableCompareText(a).localeCompare(getSortableCompareText(b))
+}
+
+export function supportsEventBridgeTemplates(runtime: string) {
+    return runtime === 'python3.7' || runtime === 'python3.6' || runtime === 'python3.8'
+}
+
+export function getTemplateValue(templateDisplayed: SamTemplate) {
+    switch (templateDisplayed) {
+        case helloWorldTemplate:
+            return 'hello-world'
+        case eventBridgeHelloWorldTemplate:
+            return 'eventBridge-hello-world'
+        case eventBridgeStarterAppTemplate:
+            return 'eventBridge-schema-app'
+        default:
+            throw new Error(`Template ${templateDisplayed} is not supported for sam application flow`)
+    }
 }

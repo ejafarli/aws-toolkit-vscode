@@ -8,6 +8,7 @@ import { SpawnOptions } from 'child_process'
 import { SamCliContext } from '../../../../shared/sam/cli/samCliContext'
 import { runSamCliInit, SamCliInitArgs } from '../../../../shared/sam/cli/samCliInit'
 import { SamCliProcessInvoker } from '../../../../shared/sam/cli/samCliInvokerUtils'
+import { getTemplateValue, helloWorldTemplate } from '../../../../lambda/models/samLambdaRuntime'
 import {
     MINIMUM_SAM_CLI_VERSION_INCLUSIVE,
     SamCliValidator,
@@ -68,6 +69,7 @@ describe('runSamCliInit', async () => {
         name: 'qwerty',
         location: '/some/path/to/code.js',
         runtime: 'nodejs8.10',
+        template: helloWorldTemplate,
         dependencyManager: sampleDependencyManager
     }
 
@@ -169,7 +171,7 @@ describe('runSamCliInit', async () => {
     it('Passes --app-template', async () => {
         const processInvoker: SamCliProcessInvoker = new ExtendedTestSamCliProcessInvoker(
             (spawnOptions: SpawnOptions, args: any[]) => {
-                assertArgsContainArgument(args, '--app-template', 'hello-world')
+                assertArgsContainArgument(args, '--app-template', getTemplateValue(helloWorldTemplate))
             }
         )
 

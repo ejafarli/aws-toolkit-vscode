@@ -14,6 +14,8 @@ import { samInitDocUrl } from '../../shared/constants'
 import { createHelpButton } from '../../shared/ui/buttons'
 import * as input from '../../shared/ui/input'
 import * as picker from '../../shared/ui/picker'
+import { SchemaClient } from '../../shared/clients/schemaClient'
+import { ext } from '../../shared/extensionGlobals'
 import {
     BrowseFolderQuickPickItem,
     FolderQuickPickItem,
@@ -22,27 +24,55 @@ import {
     WizardStep,
     WorkspaceFolderQuickPickItem
 } from '../../shared/wizards/multiStepWizard'
-import * as lambdaRuntime from '../models/samLambdaRuntime'
+import {
+    exitTemplate,
+    eventBridgeStarterAppTemplate,
+    samLambdaRuntimes,
+    supportsEventBridgeTemplates,
+    samTemplates,
+    helloWorldTemplate,
+    SamTemplate,
+    compareSamLambdaRuntime
+} from '../models/samLambdaRuntime'
+import { toArrayAsync } from '../../shared/utilities/collectionUtils'
+import { Schemas } from 'aws-sdk'
 
 export interface CreateNewSamAppWizardContext {
     readonly lambdaRuntimes: Set<Runtime>
     readonly workspaceFolders: vscode.WorkspaceFolder[] | undefined
 
     promptUserForRuntime(currRuntime?: Runtime): Promise<Runtime | undefined>
+    promptUserForTemplate(currRuntime: Runtime, currTemplate?: SamTemplate): Promise<SamTemplate | undefined>
+
+    promptUserForRegion(currRegion?: string): Promise<string | undefined>
+    promptUserForRegistry(currRegion: string, currRegistry?: string): Promise<string | undefined>
+    promptUserForSchema(currRegion: string, currRegistry: string, currSchema?: string): Promise<string | undefined>
 
     promptUserForLocation(): Promise<vscode.Uri | undefined>
-
     promptUserForName(): Promise<string | undefined>
 
     showOpenDialog(options: vscode.OpenDialogOptions): Thenable<vscode.Uri[] | undefined>
 }
 
-export class DefaultCreateNewSamAppWizardContext extends WizardContext implements CreateNewSamAppWizardContext {
-    public readonly lambdaRuntimes = lambdaRuntime.samLambdaRuntimes
-    private readonly helpButton = createHelpButton(localize('AWS.command.help', 'View Documentation'))
+export interface regionRegistryMap {
+    region: string
+    registrySchameMap: registrySchemaMap[]
+}
 
-    public constructor() {
+export interface registrySchemaMap {
+    registry: Schemas.RegistrySummary
+    schemaList: Schemas.SchemaSummary[]
+}
+
+export class DefaultCreateNewSamAppWizardContext extends WizardContext implements CreateNewSamAppWizardContext {
+    public readonly lambdaRuntimes = samLambdaRuntimes
+    cachedRegions: regionRegistryMap[] = []
+    private readonly helpButton = createHelpButton(localize('AWS.command.help', 'View Documentation'))
+    private credentialsNotSelected = false
+
+    public constructor(isCredentialsSelected: boolean) {
         super()
+        this.credentialsNotSelected = isCredentialsSelected
     }
 
     public async promptUserForRuntime(currRuntime?: Runtime): Promise<Runtime | undefined> {
@@ -55,7 +85,7 @@ export class DefaultCreateNewSamAppWizardContext extends WizardContext implement
             buttons: [this.helpButton, vscode.QuickInputButtons.Back],
             items: this.lambdaRuntimes
                 .toArray()
-                .sort(lambdaRuntime.compareSamLambdaRuntime)
+                .sort(compareSamLambdaRuntime)
                 .map(runtime => ({
                     label: runtime,
                     alwaysShow: runtime === currRuntime,
@@ -77,6 +107,195 @@ export class DefaultCreateNewSamAppWizardContext extends WizardContext implement
         const val = picker.verifySinglePickerOutput(choices)
 
         return val ? (val.label as Runtime) : undefined
+    }
+
+    public async promptUserForTemplate(
+        currRuntime: Runtime,
+        currTemplate?: SamTemplate
+    ): Promise<SamTemplate | undefined> {
+        let templates: Set<SamTemplate> = Set<SamTemplate>([helloWorldTemplate])
+        if (supportsEventBridgeTemplates(currRuntime)) {
+            templates = samTemplates
+        }
+
+        const quickPick = picker.createQuickPick<vscode.QuickPickItem>({
+            options: {
+                ignoreFocusOut: true,
+                title: localize('AWS.samcli.initWizard.template.prompt', 'Select a SAM template'),
+                value: currTemplate ? currTemplate : ''
+            },
+            buttons: [this.helpButton, vscode.QuickInputButtons.Back],
+            items: templates.toArray().map(template => ({
+                label: template,
+                alwaysShow: template === currTemplate,
+                description:
+                    template === currTemplate
+                        ? localize('AWS.wizard.selectedPreviously', 'Selected Previously')
+                        : this.getTemplateDescription(template)
+            }))
+        })
+
+        const choices = await picker.promptUser({
+            picker: quickPick,
+            onDidTriggerButton: (button, resolve, reject) => {
+                if (button === vscode.QuickInputButtons.Back) {
+                    resolve(undefined)
+                } else if (button === this.helpButton) {
+                    vscode.env.openExternal(vscode.Uri.parse(samInitDocUrl))
+                }
+            }
+        })
+        const val = picker.verifySinglePickerOutput(choices)
+
+        if (val && val.label === eventBridgeStarterAppTemplate && this.credentialsNotSelected) {
+            await ext.awsContextCommands.onCommandLogin()
+            return exitTemplate
+        }
+
+        return val ? (val.label as SamTemplate) : undefined
+    }
+
+    public async promptUserForRegion(currRegion?: string): Promise<string | undefined> {
+        const SCHEMAS_REGIONS = ['us-east-1', 'us-east-2', 'us-west-2', 'eu-west-1', 'ap-northeast-1']
+
+        const quickPick = picker.createQuickPick<vscode.QuickPickItem>({
+            options: {
+                ignoreFocusOut: true,
+                title: localize('AWS.samcli.initWizard.schemas.region.prompt', 'Select a region'),
+                value: currRegion ? currRegion : ''
+            },
+            buttons: [this.helpButton, vscode.QuickInputButtons.Back],
+            items: SCHEMAS_REGIONS!.map(region => ({
+                label: region, // display proper labels
+                alwaysShow: region === currRegion,
+                description:
+                    region === currRegion ? localize('AWS.wizard.selectedPreviously', 'Selected Previously') : ''
+            }))
+        })
+
+        const choices = await picker.promptUser({
+            picker: quickPick,
+            onDidTriggerButton: (button, resolve, reject) => {
+                if (button === vscode.QuickInputButtons.Back) {
+                    resolve(undefined)
+                } else if (button === this.helpButton) {
+                    vscode.env.openExternal(vscode.Uri.parse(samInitDocUrl))
+                }
+            }
+        })
+        const val = picker.verifySinglePickerOutput(choices) // could be moved into seperate method for refactory purposes
+
+        // doesn't make sense, leave it for now
+        return val ? (val.label as string) : undefined
+    }
+
+    public async promptUserForRegistry(currRegion: string, currRegistry?: string): Promise<string | undefined> {
+        const filteredCache = this.cachedRegions.filter(cacheValue => cacheValue.region === currRegion).shift()
+        let registries: Schemas.RegistrySummary[] | undefined
+
+        if (filteredCache) {
+            registries = filteredCache?.registrySchameMap.reduce(
+                (accumulator: Schemas.RegistrySummary[], item: registrySchemaMap) => {
+                    accumulator.push(item.registry)
+                    return accumulator
+                },
+                []
+            )
+        }
+
+        if (!registries) {
+            const client: SchemaClient = ext.toolkitClientBuilder.createSchemaClient(currRegion)
+            const registrySchemaMapArray: registrySchemaMap[] = []
+            registries = await toArrayAsync(client.listRegistries())
+            await Promise.all(
+                registries.map(async registry => {
+                    const schemas = await toArrayAsync(client.listSchemas(registry.RegistryName!))
+
+                    if (Array.isArray(schemas)) {
+                        const singleItem: registrySchemaMap = {
+                            registry: registry,
+                            schemaList: schemas
+                        }
+                        registrySchemaMapArray.push(singleItem)
+                    }
+                })
+            )
+
+            const finalPushedValue: regionRegistryMap = {
+                region: currRegion,
+                registrySchameMap: registrySchemaMapArray
+            }
+            this.cachedRegions.push(finalPushedValue)
+        }
+
+        const quickPick = picker.createQuickPick<vscode.QuickPickItem>({
+            options: {
+                ignoreFocusOut: true,
+                title: localize('AWS.samcli.initWizard.schemas.registry.prompt', 'Select a registry'),
+                value: currRegistry ? currRegistry : ''
+            },
+            buttons: [this.helpButton, vscode.QuickInputButtons.Back],
+            items: registries!.map(registry => ({
+                label: registry.RegistryName!,
+                alwaysShow: registry.RegistryName === currRegistry,
+                description:
+                    registry === currRegistry ? localize('AWS.wizard.selectedPreviously', 'Selected Previously') : ''
+            }))
+        })
+
+        const choices = await picker.promptUser({
+            picker: quickPick,
+            onDidTriggerButton: (button, resolve, reject) => {
+                if (button === vscode.QuickInputButtons.Back) {
+                    resolve(undefined)
+                } else if (button === this.helpButton) {
+                    vscode.env.openExternal(vscode.Uri.parse(samInitDocUrl))
+                }
+            }
+        })
+        const val = picker.verifySinglePickerOutput(choices)
+
+        //ele value nun ozunu belke return elemek? yox registry name lazimdi bize
+        return val ? val.label : undefined
+    }
+
+    public async promptUserForSchema(
+        currRegion: string,
+        currRegistry: string,
+        currSchema?: string
+    ): Promise<string | undefined> {
+        const schemas = this.cachedRegions
+            .filter(cacheValue => cacheValue.region === currRegion)
+            .shift()
+            ?.registrySchameMap.filter(cacheValue => cacheValue.registry.RegistryName === currRegistry)
+            .shift()?.schemaList
+        const quickPick = picker.createQuickPick<vscode.QuickPickItem>({
+            options: {
+                ignoreFocusOut: true,
+                title: localize('AWS.samcli.initWizard.schemas.schema.prompt', 'Select a schema'),
+                value: currSchema ? currSchema : ''
+            },
+            buttons: [this.helpButton, vscode.QuickInputButtons.Back],
+            items: schemas!.map(schema => ({
+                label: schema.SchemaName!,
+                alwaysShow: schema.SchemaName === currSchema,
+                description:
+                    schema === currSchema ? localize('AWS.wizard.selectedPreviously', 'Selected Previously') : ''
+            }))
+        })
+
+        const choices = await picker.promptUser({
+            picker: quickPick,
+            onDidTriggerButton: (button, resolve, reject) => {
+                if (button === vscode.QuickInputButtons.Back) {
+                    resolve(undefined)
+                } else if (button === this.helpButton) {
+                    vscode.env.openExternal(vscode.Uri.parse(samInitDocUrl))
+                }
+            }
+        })
+        const val = picker.verifySinglePickerOutput(choices)
+        return val ? val.label : undefined
     }
 
     public async promptUserForLocation(): Promise<vscode.Uri | undefined> {
@@ -165,16 +384,28 @@ export class DefaultCreateNewSamAppWizardContext extends WizardContext implement
             }
         })
     }
+
+    private getTemplateDescription(template: string) {
+        return template === eventBridgeStarterAppTemplate ? 'You need to be connected to AWS to select this entry' : ''
+    }
 }
 
 export interface CreateNewSamAppWizardResponse {
     runtime: Runtime
+    template: SamTemplate
+    region?: string
+    registryName?: string
+    schemaName?: string
     location: vscode.Uri
     name: string
 }
 
 export class CreateNewSamAppWizard extends MultiStepWizard<CreateNewSamAppWizardResponse> {
     private runtime?: Runtime
+    private template?: SamTemplate
+    private region?: string
+    private registryName?: string
+    private schemaName?: string
     private location?: vscode.Uri
     private name?: string
 
@@ -187,12 +418,16 @@ export class CreateNewSamAppWizard extends MultiStepWizard<CreateNewSamAppWizard
     }
 
     protected getResult(): CreateNewSamAppWizardResponse | undefined {
-        if (!this.runtime || !this.location || !this.name) {
+        if (!this.runtime || !this.template || !this.location || !this.name) {
             return undefined
         }
 
         return {
             runtime: this.runtime,
+            template: this.template,
+            region: this.region,
+            registryName: this.registryName,
+            schemaName: this.schemaName,
             location: this.location,
             name: this.name
         }
@@ -201,13 +436,52 @@ export class CreateNewSamAppWizard extends MultiStepWizard<CreateNewSamAppWizard
     private readonly RUNTIME: WizardStep = async () => {
         this.runtime = await this.context.promptUserForRuntime(this.runtime)
 
-        return this.runtime ? this.LOCATION : undefined
+        return this.runtime ? this.TEMPLATE : undefined
+    }
+
+    private readonly TEMPLATE: WizardStep = async () => {
+        this.template = await this.context.promptUserForTemplate(this.runtime!)
+
+        if (this.template === exitTemplate) {
+            return undefined
+        }
+        if (this.template === eventBridgeStarterAppTemplate) {
+            return this.REGION
+        }
+
+        return this.template ? this.LOCATION : this.RUNTIME
+    }
+
+    private readonly REGION: WizardStep = async () => {
+        this.region = await this.context.promptUserForRegion()
+
+        return this.region ? this.REGISTRY : this.TEMPLATE
+    }
+
+    private readonly REGISTRY: WizardStep = async () => {
+        this.registryName = await this.context.promptUserForRegistry(this.region!)
+
+        return this.registryName ? this.SCHEMA : this.REGION
+    }
+
+    private readonly SCHEMA: WizardStep = async () => {
+        this.schemaName = await this.context.promptUserForSchema(this.region!, this.registryName!)
+
+        return this.schemaName ? this.LOCATION : this.REGISTRY
     }
 
     private readonly LOCATION: WizardStep = async () => {
         this.location = await this.context.promptUserForLocation()
 
-        return this.location ? this.NAME : this.RUNTIME
+        if (!this.location) {
+            if (this.template === eventBridgeStarterAppTemplate) {
+                return this.SCHEMA
+            }
+
+            return this.TEMPLATE
+        }
+
+        return this.NAME
     }
 
     private readonly NAME: WizardStep = async () => {

@@ -19,12 +19,23 @@ import { METADATA_FIELD_NAME, MetadataResult } from '../../shared/telemetry/tele
 import { makeCheckLogsMessage } from '../../shared/utilities/messages'
 import { ChannelLogger } from '../../shared/utilities/vsCodeUtils'
 import { addFolderToWorkspace } from '../../shared/utilities/workspaceUtils'
-import { getDependencyManager } from '../models/samLambdaRuntime'
+import { eventBridgeStarterAppTemplate, getDependencyManager } from '../models/samLambdaRuntime'
 import {
     CreateNewSamAppWizard,
     CreateNewSamAppWizardResponse,
     DefaultCreateNewSamAppWizardContext
 } from '../wizards/samInitWizard'
+import {
+    SchemaTemplateParameters,
+    buildSchemaTemplateParameters
+} from '../../eventSchemas/templates/schemasAppTemplateUtils'
+import { ext } from '../../shared/extensionGlobals'
+import {
+    SchemaCodeDownloader,
+    SchemaCodeDownloadRequestDetails
+} from '../../eventSchemas/commands/downloadSchemaItemCode'
+import { createSchemaCodeDownloaderObject } from '../..//eventSchemas/commands/downloadSchemaItemCode'
+import { AwsContext } from '../../shared/awsContext'
 
 export async function resumeCreateNewSamApp(activationLaunchPath: ActivationLaunchPath = new ActivationLaunchPath()) {
     try {
@@ -65,6 +76,7 @@ export interface CreateNewSamApplicationResults {
  */
 export async function createNewSamApplication(
     channelLogger: ChannelLogger,
+    awsContext: AwsContext,
     samCliContext: SamCliContext = getSamCliContext(),
     activationLaunchPath: ActivationLaunchPath = new ActivationLaunchPath()
 ): Promise<CreateNewSamApplicationResults> {
@@ -77,7 +89,8 @@ export async function createNewSamApplication(
     try {
         await validateSamCli(samCliContext.validator)
 
-        const wizardContext = new DefaultCreateNewSamAppWizardContext()
+        const selectedCredentials = await awsContext.getCredentials()
+        const wizardContext = new DefaultCreateNewSamAppWizardContext(selectedCredentials === undefined)
         const config: CreateNewSamAppWizardResponse | undefined = await new CreateNewSamAppWizard(wizardContext).run()
         if (!config) {
             results.result = 'cancel'
@@ -95,7 +108,37 @@ export async function createNewSamApplication(
             name: config.name,
             location: config.location.fsPath,
             runtime: config.runtime,
-            dependencyManager
+            dependencyManager,
+            template: config.template
+        }
+
+        let schemaTemplateParameters: SchemaTemplateParameters
+        let request: SchemaCodeDownloadRequestDetails
+        let schemaCodeDownloader: SchemaCodeDownloader
+        if (config.template === eventBridgeStarterAppTemplate) {
+            const client = ext.toolkitClientBuilder.createSchemaClient(config.region!)
+            schemaTemplateParameters = await buildSchemaTemplateParameters(
+                config.schemaName!,
+                config.registryName!,
+                client
+            )
+
+            //update SAM cli arguments
+            initArguments.extraContent = schemaTemplateParameters.templateExtraContent
+            initArguments.registryName = config.registryName!
+
+            const destinationDirectoryPathJoin = path.join(config.location.fsPath, config.name, 'hello_world_function')
+
+            request = {
+                registryName: config.registryName!,
+                schemaName: config.schemaName!,
+                language: 'Python36', //only python supported at this point
+                schemaVersion: schemaTemplateParameters!.SchemaVersion,
+                destinationDirectory: vscode.Uri.file(destinationDirectoryPathJoin),
+                schemaCoreCodeFileName: ''
+            }
+
+            schemaCodeDownloader = createSchemaCodeDownloaderObject(client)
         }
 
         await runSamCliInit(initArguments, samCliContext)
@@ -107,6 +150,10 @@ export async function createNewSamApplication(
             results.reason = 'fileNotFound'
 
             return results
+        }
+
+        if (config.template === eventBridgeStarterAppTemplate) {
+            await schemaCodeDownloader!.downloadCode(request!)
         }
 
         // In case adding the workspace folder triggers a VS Code restart, instruct extension to
