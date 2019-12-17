@@ -14,6 +14,14 @@ export const samLambdaRuntimes: Set<Runtime> = Set.union([nodeJsRuntimes, python
 
 export type DependencyManager = 'cli-package' | 'mod' | 'gradle' | 'pip' | 'npm' | 'maven' | 'bundler'
 
+export type SamLambdaTemplate = 'hello-world' | 'eventBridge-hello-world' | 'eventBridge-schema-app'
+export const samLambdaTemplates: Set<SamLambdaTemplate> = Set<SamLambdaTemplate>([
+    'hello-world',
+    'eventBridge-hello-world',
+    'eventBridge-schema-app'
+])
+export const samLambdaTemplatesHelloWorld: Set<SamLambdaTemplate> = Set<SamLambdaTemplate>(['hello-world'])
+
 // TODO: Make this return an array of DependencyManagers when we add runtimes with multiple dependency managers
 export function getDependencyManager(runtime: Runtime): DependencyManager {
     if (nodeJsRuntimes.has(runtime)) {

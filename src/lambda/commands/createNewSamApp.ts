@@ -24,6 +24,15 @@ import {
     CreateNewSamAppWizardResponse,
     DefaultCreateNewSamAppWizardContext
 } from '../wizards/samInitWizard'
+import {
+    SchemaTemplateParameters,
+    SchemaTemplateExtraContext,
+    buildSchemaTemplateParameters
+} from '../../eventSchemas/templates/schemasAppTemplateUtils'
+import { SchemaClient } from '../../shared/clients/schemaClient'
+import { ext } from '../../shared/extensionGlobals'
+import { SchemaCodeDownloadRequestDetails } from '../../eventSchemas/commands/downloadSchemaItemCode'
+import { createSchemaCodeDownloaderObject } from '../..//eventSchemas/commands/downloadSchemaItemCode'
 
 export async function resumeCreateNewSamApp(activationLaunchPath: ActivationLaunchPath = new ActivationLaunchPath()) {
     try {
@@ -90,11 +99,27 @@ export async function createNewSamApplication(
         // TODO: Make this selectable in the wizard to account for runtimes with multiple dependency managers
         const dependencyManager = getDependencyManager(config.runtime)
 
+        let schemaTemplateParameters: SchemaTemplateParameters
+        let extraContent: SchemaTemplateExtraContext
+        if (config.template === 'eventBridge-schema-app') {
+            // belke elave edim  ya nese edim
+            const client: SchemaClient = ext.toolkitClientBuilder.createSchemaClient(config.region)
+            schemaTemplateParameters = await buildSchemaTemplateParameters(
+                config.schemaName,
+                config.registryName,
+                client
+            )
+            extraContent = schemaTemplateParameters.templateExtraContent
+        }
+
         const initArguments: SamCliInitArgs = {
             name: config.name,
             location: config.location.fsPath,
             runtime: config.runtime,
-            dependencyManager
+            dependencyManager,
+            template: config.template,
+            registryName: config.registryName,
+            extraContent: extraContent! // bunu da gerek clean up edim
         }
 
         await runSamCliInit(initArguments, samCliContext)
@@ -107,6 +132,28 @@ export async function createNewSamApplication(
 
             return results
         }
+
+        if (config.template === 'eventBridge-schema-app') {
+            // belke elave edim  ya nese edim
+            const client: SchemaClient = ext.toolkitClientBuilder.createSchemaClient(config.region)
+
+            const destinationDirectoryPathJoin = path.join(
+                config.location.fsPath,
+                initArguments.name,
+                'hello_world_function'
+            )
+            const request: SchemaCodeDownloadRequestDetails = {
+                registryName: config.registryName,
+                schemaName: config.schemaName,
+                language: 'Python36', //only python supported at this point
+                schemaVersion: schemaTemplateParameters!.SchemaVersion,
+                destinationDirectory: vscode.Uri.file(destinationDirectoryPathJoin),
+                schemaCoreCodeFileName: ''
+            }
+            const schemaCodeDownloader = createSchemaCodeDownloaderObject(client)
+            const coreCodeFilePath = await schemaCodeDownloader.downloadCode(request)
+        }
+        //download schemaItemCode, will do clean up later -  bu arada sadece bu hisseni extract elediyimiz ucun, bitinde blya ela extracting notificationi gosterilir, download ucun
 
         // In case adding the workspace folder triggers a VS Code restart, instruct extension to
         // launch app file after activation.
