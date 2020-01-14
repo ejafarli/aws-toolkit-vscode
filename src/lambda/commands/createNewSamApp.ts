@@ -25,10 +25,7 @@ import {
     CreateNewSamAppWizardResponse,
     DefaultCreateNewSamAppWizardContext
 } from '../wizards/samInitWizard'
-import {
-    SchemaTemplateParameters,
-    buildSchemaTemplateParameters
-} from '../../eventSchemas/templates/schemasAppTemplateUtils'
+import { buildSchemaTemplateParameters } from '../../eventSchemas/templates/schemasAppTemplateUtils'
 import { ext } from '../../shared/extensionGlobals'
 import {
     SchemaCodeDownloader,
@@ -112,32 +109,27 @@ export async function createNewSamApplication(
             template: config.template
         }
 
-        let schemaTemplateParameters: SchemaTemplateParameters
         let request: SchemaCodeDownloadRequestDetails
         let schemaCodeDownloader: SchemaCodeDownloader
         if (config.template === eventBridgeStarterAppTemplate) {
             const client = ext.toolkitClientBuilder.createSchemaClient(config.region!)
-            schemaTemplateParameters = await buildSchemaTemplateParameters(
+            const schemaTemplateParameters = await buildSchemaTemplateParameters(
                 config.schemaName!,
                 config.registryName!,
                 client
             )
 
-            //update SAM cli arguments
             initArguments.extraContent = schemaTemplateParameters.templateExtraContent
-            initArguments.registryName = config.registryName!
 
-            const destinationDirectoryPathJoin = path.join(config.location.fsPath, config.name, 'hello_world_function')
-
+            const destinationDirectory = path.join(config.location.fsPath, config.name, 'hello_world_function')
             request = {
                 registryName: config.registryName!,
                 schemaName: config.schemaName!,
                 language: 'Python36', //only python supported at this point
                 schemaVersion: schemaTemplateParameters!.SchemaVersion,
-                destinationDirectory: vscode.Uri.file(destinationDirectoryPathJoin),
+                destinationDirectory: vscode.Uri.file(destinationDirectory),
                 schemaCoreCodeFileName: ''
             }
-
             schemaCodeDownloader = createSchemaCodeDownloaderObject(client)
         }
 
@@ -154,6 +146,14 @@ export async function createNewSamApplication(
 
         if (config.template === eventBridgeStarterAppTemplate) {
             await schemaCodeDownloader!.downloadCode(request!)
+
+            vscode.window.showInformationMessage(
+                localize(
+                    'AWS.message.info.schemas.downloadCodeBindings.finished',
+                    'Downloaded code for schema {0}!',
+                    request!.schemaName
+                )
+            )
         }
 
         // In case adding the workspace folder triggers a VS Code restart, instruct extension to

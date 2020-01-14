@@ -17,7 +17,6 @@ import { SchemaTemplateExtraContext } from '../../../eventSchemas/templates/sche
 export interface SamCliInitArgs {
     runtime: Runtime
     template: SamTemplate
-    registryName?: string
     location: string
     name: string
     dependencyManager: DependencyManager

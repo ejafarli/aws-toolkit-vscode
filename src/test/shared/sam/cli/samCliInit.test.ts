@@ -8,7 +8,7 @@ import { SpawnOptions } from 'child_process'
 import { SamCliContext } from '../../../../shared/sam/cli/samCliContext'
 import { runSamCliInit, SamCliInitArgs } from '../../../../shared/sam/cli/samCliInit'
 import { SamCliProcessInvoker } from '../../../../shared/sam/cli/samCliInvokerUtils'
-import { getTemplateValue, helloWorldTemplate } from '../../../../lambda/models/samLambdaRuntime'
+import { getTemplateValue, eventBridgeStarterAppTemplate } from '../../../../lambda/models/samLambdaRuntime'
 import {
     MINIMUM_SAM_CLI_VERSION_INCLUSIVE,
     SamCliValidator,
@@ -25,6 +25,8 @@ import {
     BadExitCodeSamCliProcessInvoker,
     TestSamCliProcessInvoker
 } from './testSamCliProcessInvoker'
+
+import { SchemaTemplateExtraContext } from '../../../../eventSchemas/templates/schemasAppTemplateUtils'
 
 describe('runSamCliInit', async () => {
     class FakeChildProcessResult implements ChildProcessResult {
@@ -65,11 +67,21 @@ describe('runSamCliInit', async () => {
 
     const sampleDependencyManager = 'npm'
 
+    const a: SchemaTemplateExtraContext = {
+        AWS_Schema_registry: 'test',
+        AWS_Schema_name: 'test',
+        AWS_Schema_root: 'test',
+        AWS_Schema_source: 'test',
+        AWS_Schema_detail_type: 'test',
+        user_agent: 'test'
+    }
+
     const sampleSamInitArgs: SamCliInitArgs = {
         name: 'qwerty',
         location: '/some/path/to/code.js',
         runtime: 'nodejs8.10',
-        template: helloWorldTemplate,
+        template: eventBridgeStarterAppTemplate,
+        extraContent: a,
         dependencyManager: sampleDependencyManager
     }
 
@@ -171,7 +183,7 @@ describe('runSamCliInit', async () => {
     it('Passes --app-template', async () => {
         const processInvoker: SamCliProcessInvoker = new ExtendedTestSamCliProcessInvoker(
             (spawnOptions: SpawnOptions, args: any[]) => {
-                assertArgsContainArgument(args, '--app-template', getTemplateValue(helloWorldTemplate))
+                assertArgsContainArgument(args, '--app-template', getTemplateValue(eventBridgeStarterAppTemplate))
             }
         )
 
