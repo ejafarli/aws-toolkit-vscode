@@ -10,16 +10,20 @@ import { viewSchemaItem } from '../eventSchemas/commands/viewSchemaItem'
 import { RegistryItemNode } from '../eventSchemas/explorer/registryItemNode'
 import { SchemaItemNode } from '../eventSchemas/explorer/schemaItemNode'
 import { SchemasNode } from '../eventSchemas/explorer/schemasNode'
+import { AwsContext } from '../shared/awsContext'
 
 /**
  * Activate Schemas functionality for the extension.
  */
-export async function activate(): Promise<void> {
-    await registerSchemasCommands()
+export async function activate(awsContext: AwsContext): Promise<void> {
+    await registerSchemasCommands(awsContext)
 }
 
-async function registerSchemasCommands(): Promise<void> {
-    vscode.commands.registerCommand('aws.viewSchemaItem', async (node: SchemaItemNode) => await viewSchemaItem(node))
+async function registerSchemasCommands(awsContext: AwsContext): Promise<void> {
+    vscode.commands.registerCommand(
+        'aws.viewSchemaItem',
+        async (node: SchemaItemNode) => await viewSchemaItem(node, awsContext)
+    )
     vscode.commands.registerCommand(
         'aws.downloadSchemaItemCode',
         async (node: SchemaItemNode) => await downloadSchemaItemCode(node)

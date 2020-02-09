@@ -6,19 +6,35 @@
 import * as nls from 'vscode-nls'
 const localize = nls.loadMessageBundle()
 
+import fs = require('fs')
+import path = require('path')
+import { tempDirPath } from '../../shared/filesystemUtilities'
+
 import * as vscode from 'vscode'
+import { AwsContext } from '../../shared/awsContext'
 import { getLogger, Logger } from '../../shared/logger'
 import { recordSchemasView, Result } from '../../shared/telemetry/telemetry'
 import { getTabSizeSetting } from '../../shared/utilities/editorUtilities'
 import { SchemaItemNode } from '../explorer/schemaItemNode'
 
-export async function viewSchemaItem(node: SchemaItemNode) {
+export async function viewSchemaItem(node: SchemaItemNode, awsContext: AwsContext) {
     const logger: Logger = getLogger()
 
     let viewResult: Result = 'Succeeded'
     try {
-        const rawSchemaContent = await node.getSchemaContent()
-        await showSchemaContent(rawSchemaContent)
+        const profile = awsContext.getCredentialProfileName()
+        const response = await node.client.describeSchema(node.registryName, node.schemaName)
+        const fileName = `${profile!}.${node.client.regionCode}.${node.registryName}.${
+            node.schemaName
+        }.${response.SchemaVersion!}.json`
+
+        const schemaContentTempFile = await writeSchemaContentToTempFile(response.Content!, fileName)
+        const documentOptions: vscode.TextDocumentShowOptions = {
+            viewColumn: vscode.ViewColumn.One,
+            preview: false
+        }
+
+        await vscode.window.showTextDocument(vscode.Uri.file(schemaContentTempFile), documentOptions)
     } catch (err) {
         viewResult = 'Failed'
         const error = err as Error
@@ -41,14 +57,15 @@ export function schemaFormatter(rawSchemaContent: string, tabSize: number = getT
     return prettySchemaContent
 }
 
-export async function showSchemaContent(
+export async function writeSchemaContentToTempFile(
     rawSchemaContent: string,
+    fileName: string,
     tabSize: number = getTabSizeSetting()
-): Promise<void> {
+): Promise<string> {
     const prettySchemaContent = schemaFormatter(rawSchemaContent, tabSize)
-    const newDoc = await vscode.workspace.openTextDocument({
-        language: 'json'
-    })
-    const editor = await vscode.window.showTextDocument(newDoc, vscode.ViewColumn.One, false)
-    await editor.edit(edit => edit.insert(new vscode.Position(/*line*/ 0, /*character*/ 0), prettySchemaContent))
+    const schemaContentTempFile = path.join(tempDirPath, fileName)
+
+    fs.writeFileSync(schemaContentTempFile, prettySchemaContent)
+
+    return schemaContentTempFile
 }

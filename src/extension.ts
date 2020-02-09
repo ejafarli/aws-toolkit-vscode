@@ -133,7 +133,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
         await activateAwsExplorer({ awsContext, context, awsContextTrees, regionProvider })
 
-        await activateSchemas()
+        await activateSchemas(awsContext)
 
         await ExtensionDisposableFiles.initialize(context)
 

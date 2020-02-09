@@ -41,12 +41,6 @@ export class SchemaItemNode extends AWSTreeNodeBase {
         return this.schemaItem.SchemaName || ''
     }
 
-    public async getSchemaContent(): Promise<string> {
-        const response = await this.client.describeSchema(this.registryName, this.schemaName)
-
-        return response.Content!
-    }
-
     public async listSchemaVersions(): Promise<Schemas.SchemaVersionSummary[]> {
         const versions = await toArrayAsync(this.client.listSchemaVersions(this.registryName, this.schemaName))
 
